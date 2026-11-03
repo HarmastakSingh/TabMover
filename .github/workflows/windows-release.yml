@@ -1,0 +1,50 @@
+name: Build TabMover Windows packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish portable desktop application
+        shell: pwsh
+        run: |
+          dotnet publish src/TabMover.Desktop/TabMover.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+          New-Item -ItemType Directory -Force dist/portable | Out-Null
+          Copy-Item publish/TabMover.exe dist/portable/TabMover.exe
+          Copy-Item README.md dist/portable/README.txt
+          Copy-Item VERSION dist/portable/VERSION.txt
+          Compress-Archive -Path dist/portable/* -DestinationPath TabMover-portable-windows-x64.zip -Force
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/TabMover.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: TabMover-v0.3.0-alpha-windows
+          path: |
+            TabMover-portable-windows-x64.zip
+            dist/TabMover-Setup-v0.3.0-alpha.exe
+          if-no-files-found: error
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            TabMover-portable-windows-x64.zip
+            dist/TabMover-Setup-v0.3.0-alpha.exe
+          generate_release_notes: true
